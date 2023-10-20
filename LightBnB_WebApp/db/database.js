@@ -106,10 +106,56 @@ const getAllReservations = function (guest_id, limit = 10) {
  * @return {Promise<[{}]>}  A promise to the properties.
  */
 const getAllProperties = (options, limit = 10) => {
+  const values = []
+  const whereClauses = []
 
-  const queryString = `SELECT * FROM properties LIMIT $1`
+  let queryString = `SELECT properties.*, avg(property_reviews.rating) as average_rating
+  FROM properties
+  LEFT JOIN property_reviews ON property_id = properties.id
+  `
+
+  if(options.minimum_price_per_night) {
+    values.push(`${options.minimum_price_per_night}`)
+    whereClauses.push(` cost_per_night >= $${values.length} `);
+  }
+
+  if(options.maximum_price_per_night) {
+    values.push(`${options.maximum_price_per_night}`)
+    whereClauses.push( ` cost_per_night <= $${values.length} `);
+  }
+
+  if(options.city) {
+    values.push(`%${options.city}%`);
+    whereClauses.push(`city ILIKE $${values.length}`);
+  }
+
+  if(options.owner_id) {
+    values.push(`${options.owner_id}`);
+    whereClauses.push(` owner_id = ${values.length} `);
+  }
+
+  if(whereClauses.length > 0) {
+    queryString += ` WHERE ` + whereClauses.join(' AND ')
+  }
   
-  return pool.query(queryString, [limit])
+  queryString += `
+  GROUP BY properties.id
+  `
+
+  if(options.minimum_rating) {
+    values.push(`${options.minimum_rating}`)
+    queryString += `HAVING avg(property_reviews.rating) >= $${values.length} `
+  }
+
+  values.push(limit);
+  queryString +=
+  `ORDER BY cost_per_night
+  LIMIT $${values.length};
+  `;
+  
+  console.log(queryString, values);
+
+  return pool.query(queryString, values)
   .then((result) => {
     return result.rows;
   })
